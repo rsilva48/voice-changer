@@ -44,11 +44,12 @@ echo Please select your backend:
 echo 1) CPU (works everywhere, slower)
 echo 2) CUDA (NVIDIA GPUs)
 echo 3) DirectML (Windows, AMD/Intel/NVIDIA)
-echo 4) ROCm (AMD GPUs on Linux - not recommended for Windows)
+echo 4) ROCm (AMD GPUs on Linux)
+echo 5) ROCm for Windows (AMD RX 6000/7000/9000 - requires Python 3.12)
 echo.
 
 :ask_choice
-set /p choice=Enter your choice (1-4): 
+set /p choice=Enter your choice (1-5): 
 
 if "%choice%"=="1" (
     set BACKEND=cpu
@@ -68,14 +69,22 @@ if "%choice%"=="3" (
 if "%choice%"=="4" (
     set BACKEND=rocm
     set REQUIREMENTS_FILE=requirements-rocm.txt
-    echo Warning: ROCm is not officially supported on Windows
+    echo Warning: ROCm Linux is not officially supported on Windows.
     set /p confirm=Continue anyway? (y/n): 
     if /i "!confirm!"=="y" goto create_venv
     if /i "!confirm!"=="yes" goto create_venv
     goto ask_choice
 )
+if "%choice%"=="5" (
+    echo.
+    echo Launching the dedicated AMD ROCm Windows installer (PowerShell)...
+    echo This installer uses Python 3.12 and the official AMD ROCm 7.2 wheels.
+    echo.
+    powershell -ExecutionPolicy Bypass -File "%~dp0vc_install_rocm_windows.ps1"
+    exit /b %errorlevel%
+)
 
-echo Invalid choice. Please enter 1, 2, 3, or 4.
+echo Invalid choice. Please enter 1, 2, 3, 4, or 5.
 goto ask_choice
 
 REM Function to create virtual environment

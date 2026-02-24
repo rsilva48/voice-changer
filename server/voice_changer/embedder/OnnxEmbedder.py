@@ -24,13 +24,14 @@ class OnnxEmbedder(Embedder):
         self.fp_dtype_t = torch.float16 if self.is_half else torch.float32
         self.fp_dtype_np = np.float16 if self.is_half else np.float32
         self.onnx_session = onnxruntime.InferenceSession(model.SerializeToString(), sess_options=so, providers=onnxProviders, provider_options=onnxProviderOptions)
+        self._use_cuda_iobinding = device_manager.onnx_uses_cuda_iobinding()
         super().set_props(self.embedderType, file)
         return self
 
     def extract_features(
         self, feats: torch.Tensor, embOutputLayer=9, useFinalProj=True
     ) -> torch.Tensor:
-        if feats.device.type == 'cuda':
+        if self._use_cuda_iobinding:
             binding = self.onnx_session.io_binding()
 
             binding.bind_input('audio', device_type='cuda', device_id=feats.device.index, element_type=self.fp_dtype_np, shape=tuple(feats.shape), buffer_ptr=feats.data_ptr())

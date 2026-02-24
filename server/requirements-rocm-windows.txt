@@ -1,0 +1,40 @@
+# ============================================================
+# ROCm for Windows (AMD RX 9070 XT / RDNA3+ / gfx1100+)
+# Requires: Python 3.12, AMD driver 26.1.1+, ROCm 7.2
+# Install via: vc_install_rocm_windows.ps1
+# ============================================================
+
+# --- ROCm SDK (must be installed first, see install script) ---
+# https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl
+# https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_devel-7.2.0.dev0-py3-none-win_amd64.whl
+# https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl
+# https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm-7.2.0.dev0.tar.gz
+
+# --- PyTorch + ROCm (cp312 wheels) ---
+# These are installed explicitly by vc_install_rocm_windows.ps1 before this file
+# is processed, to avoid pip re-downloading the large wheels a second time.
+# Uncomment only if you want to install/upgrade manually:
+#   https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl
+#   https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchaudio-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl
+#   https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl
+
+# --- FAISS CPU (no ROCm/GPU FAISS for Windows) ---
+faiss-cpu==1.11.0
+
+# --- ONNX ---
+onnx==1.16.0
+onnxscript==0.2.6
+onnxslim==0.1.72
+
+# --- ONNX Runtime ---
+# onnxruntime-rocm EP was removed in ORT 1.23; MIGraphX EP is Linux-only.
+# onnxruntime-directml (DmlExecutionProvider) crashes with Access Violation
+# (0xC0000005) during session init on RDNA3/RDNA4 with certain driver versions.
+# Plain CPU onnxruntime is used: ONNX pitch extractor (RMVPE/FCPE) runs on CPU
+# while the main RVC model runs GPU-accelerated via PyTorch ROCm.
+onnxruntime==1.20.0
+
+# --- Model / audio utilities ---
+torchcrepe==0.0.24
+torchfcpe==0.0.4
+safetensors==0.5.3

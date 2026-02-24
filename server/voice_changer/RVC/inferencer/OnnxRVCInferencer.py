@@ -27,6 +27,7 @@ class OnnxRVCInferencer(Inferencer):
         # so.log_severity_level = 3
         # so.enable_profiling = True
         self.model = onnxruntime.InferenceSession(model.SerializeToString(), sess_options=so, providers=onnxProviders, provider_options=onnxProviderOptions)
+        self._use_cuda_iobinding = device_manager.onnx_uses_cuda_iobinding()
 
         metadata = json.loads(self.model.get_modelmeta().custom_metadata_map["metadata"])
         self.inferencerTypeVersion = metadata['version']
@@ -46,7 +47,7 @@ class OnnxRVCInferencer(Inferencer):
     ) -> torch.Tensor:
         assert pitch is not None or pitchf is not None, "Pitch or Pitchf is not found."
 
-        if feats.device.type == 'cuda':
+        if self._use_cuda_iobinding:
             binding = self.model.io_binding()
 
             binding.bind_input('feats', device_type='cuda', device_id=feats.device.index, element_type=self.fp_dtype_np, shape=tuple(feats.shape), buffer_ptr=feats.data_ptr())
