@@ -156,17 +156,12 @@ class DeviceManager(object):
             return ["CUDAExecutionProvider", "CPUExecutionProvider"], [{"device_id": self.device.index}, cpu_settings]
         elif self.device.type == 'privateuseone' and "DmlExecutionProvider" in availableProviders:
             return ["DmlExecutionProvider", "CPUExecutionProvider"], [{"device_id": self.device.index}, cpu_settings]
-        elif self.device.type == 'cuda' and "DmlExecutionProvider" in availableProviders:
-            # ROCm on Windows: no CUDA/ROCM EP available in onnxruntime.
-            # Use DmlExecutionProvider (DirectX12) for GPU-accelerated ONNX inference.
-            # NOTE: DML uses DirectX12 memory so io_binding with HIP tensors is NOT
-            # supported — extractors must copy tensors to CPU before passing to ORT.
-            logger.info('ROCm device detected with no CUDA/ROCM ORT EP — using DmlExecutionProvider for ONNX inference.')
-            return ["DmlExecutionProvider", "CPUExecutionProvider"], [{"device_id": 0}, cpu_settings]
         elif self.device.type == 'cuda':
-            # ROCm on Windows with plain onnxruntime: no GPU ORT provider available.
-            # ONNX models run on CPU; PyTorch operations still use the GPU via ROCm.
-            logger.info('ROCm device detected with no GPU ORT EP — ONNX inference will run on CPU.')
+            # ROCm on Windows: no CUDA/ROCM/DML ORT EP is stable for real models.
+            # DmlExecutionProvider crashes (0xC0000005 Access Violation) on RDNA3/4
+            # with actual voice changer ONNX models despite passing trivial tests.
+            # ONNX models run on CPU; PyTorch/ROCm still drives GPU for .pth models.
+            logger.info('ROCm device detected — ONNX inference will run on CPU (no stable GPU ORT EP on Windows ROCm).')
             return ["CPUExecutionProvider"], [cpu_settings]
         elif 'CoreMLExecutionProvider' in availableProviders:
             coreml_flags = CoreMLFlag.ONLY_ENABLE_DEVICE_WITH_ANE

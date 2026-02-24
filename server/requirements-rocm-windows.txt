@@ -27,12 +27,15 @@ onnxscript==0.2.6
 onnxslim==0.1.72
 
 # --- ONNX Runtime ---
-# onnxruntime-rocm EP was removed in ORT 1.23; MIGraphX EP is Linux-only.
-# onnxruntime-directml 1.20.0 crashed (0xC0000005) on RDNA4 (RX 9070 XT).
-# 1.24.2 fixes the crash and provides DmlExecutionProvider (DirectX12 GPU accel).
-# Note: DML uses DirectX12 memory, so io_binding with HIP (ROCm) tensors is
-# not possible — _use_cuda_iobinding=False routes tensors through CPU numpy.
-onnxruntime-directml==1.24.2
+# No stable GPU ORT EP exists for ROCm on Windows:
+#   - ROCm EP removed since ORT 1.23
+#   - MIGraphX EP is Linux-only
+#   - DmlExecutionProvider (onnxruntime-directml) crashes with 0xC0000005
+#     Access Violation when running real voice changer ONNX models on RDNA3/4
+#     (both 1.20.0 and 1.24.2 confirmed crashing on RX 9070 XT)
+# Plain CPU onnxruntime is used: ONNX models (embedder, pitch extractor,
+# inferencer) run on CPU while PyTorch .pth models use GPU via ROCm/HIP.
+onnxruntime==1.20.0
 
 # --- Model / audio utilities ---
 torchcrepe==0.0.24
