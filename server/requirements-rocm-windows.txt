@@ -28,11 +28,11 @@ onnxslim==0.1.72
 
 # --- ONNX Runtime ---
 # onnxruntime-rocm EP was removed in ORT 1.23; MIGraphX EP is Linux-only.
-# onnxruntime-directml (DmlExecutionProvider) crashes with Access Violation
-# (0xC0000005) during session init on RDNA3/RDNA4 with certain driver versions.
-# Plain CPU onnxruntime is used: ONNX pitch extractor (RMVPE/FCPE) runs on CPU
-# while the main RVC model runs GPU-accelerated via PyTorch ROCm.
-onnxruntime==1.20.0
+# onnxruntime-directml 1.20.0 crashed (0xC0000005) on RDNA4 (RX 9070 XT).
+# 1.24.2 fixes the crash and provides DmlExecutionProvider (DirectX12 GPU accel).
+# Note: DML uses DirectX12 memory, so io_binding with HIP (ROCm) tensors is
+# not possible — _use_cuda_iobinding=False routes tensors through CPU numpy.
+onnxruntime-directml==1.24.2
 
 # --- Model / audio utilities ---
 torchcrepe==0.0.24
