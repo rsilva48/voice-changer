@@ -90,3 +90,19 @@ def list_audio_device():
         serverAudioOutputDevices.append(serverOutputAudioDevice)
 
     return serverAudioInputDevices, serverAudioOutputDevices
+
+
+def resolve_device_index_by_name(name: str, device_type: ServerAudioDeviceType) -> int | None:
+    """After sd._initialize(), resolve the current index for a device by its name.
+    Returns the new index or None if not found."""
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return None
+    for d in devices:
+        if d["name"] == name:
+            if device_type == "input" and d["max_input_channels"] > 0:
+                return d["index"]
+            elif device_type == "output" and d["max_output_channels"] > 0:
+                return d["index"]
+    return None

@@ -21,27 +21,27 @@ function AudioDevicesServer() {
 
   // Get Server Input Devices based on selected Audio Driver
   const serverInputDevices = useMemo(() => {
-    return appState.serverSetting?.serverSetting?.serverAudioInputDevices
+    return (appState.serverSetting?.serverSetting?.serverAudioInputDevices ?? [])
       .filter(device => device.hostAPI === selectedAudioDriver);
   }, [appState.serverSetting, selectedAudioDriver]);
 
   // Get Server Output Devices based on selected Audio Driver
   const serverOutputDevices = useMemo(() => {
-    return appState.serverSetting?.serverSetting?.serverAudioOutputDevices
+    return (appState.serverSetting?.serverSetting?.serverAudioOutputDevices ?? [])
       .filter(device => device.hostAPI === selectedAudioDriver);
   }, [appState.serverSetting, selectedAudioDriver]);
 
   // Get Server Monitor Devices based on selected Monitor Audio Driver
   const serverMonitorDevices = useMemo(() => {
     if (!selectedMonitorAudioDriver) return [];
-    return appState.serverSetting?.serverSetting?.serverAudioOutputDevices
+    return (appState.serverSetting?.serverSetting?.serverAudioOutputDevices ?? [])
       .filter(device => device.hostAPI === selectedMonitorAudioDriver);
   }, [appState.serverSetting, selectedMonitorAudioDriver]);
 
   // Set selected monitor audio driver based on selected audio driver
   useEffect(() => {
     if (availableAudioDrivers.length > 0) {
-      const monitor = appState.serverSetting.serverSetting.serverAudioOutputDevices.find(x => x.index === appState.serverSetting.serverSetting.serverMonitorDeviceId);
+      const monitor = (appState.serverSetting.serverSetting.serverAudioOutputDevices ?? []).find(x => x.index === appState.serverSetting.serverSetting.serverMonitorDeviceId);
       setSelectedMonitorAudioDriver(availableAudioDrivers.find(x => x === monitor?.hostAPI) || availableAudioDrivers[0]);
     }
   }, [availableAudioDrivers]);
@@ -57,6 +57,7 @@ function AudioDevicesServer() {
   const handleSampleRateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     appState.serverSetting.updateServerSettings({
       ...appState.serverSetting.serverSetting,
+      serverAudioSampleRate: parseInt(event.target.value),
       serverInputAudioSampleRate: parseInt(event.target.value),
       serverOutputAudioSampleRate: parseInt(event.target.value),
       serverMonitorAudioSampleRate: parseInt(event.target.value)
@@ -153,7 +154,7 @@ function AudioDevicesServer() {
     <>
       <div>
         <label htmlFor="sampleRate" className={CSS_CLASSES.label}>Sample Rate</label>
-        <select id="sampleRate" className={CSS_CLASSES.select} value={appState.serverSetting?.serverSetting?.serverInputAudioSampleRate} onChange={handleSampleRateChange}>
+        <select id="sampleRate" className={CSS_CLASSES.select} value={appState.serverSetting?.serverSetting?.serverAudioSampleRate} onChange={handleSampleRateChange}>
           {sampleRates.map(rate => (
             <option key={rate} value={rate}>{rate} Hz</option>
           ))}

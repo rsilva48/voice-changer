@@ -94,6 +94,12 @@ class VoiceChangerV2:
         elif key == 'crossFadeOverlapSize':
             self.crossfade_frame = int(val * self.settings.inputSampleRate)
             self._generate_strength()
+        elif key == 'recordIO':
+            if int(val) == 0:
+                # Flush and close WAV files so the header gets written correctly before serving
+                self.io_recorder.close()
+            elif int(val) == 1:
+                self.io_recorder.open(self.settings.inputSampleRate, self.settings.outputSampleRate)
 
         if self.vcmodel is not None:
             self.vcmodel.update_settings(key, val, old_val)

@@ -40,6 +40,16 @@ def setup_logging(log_level: str = 'info'):
         format="%(asctime)-15s %(levelname)-8s [%(module)s] %(message)s",
         handlers=[logging.FileHandler(LOG_FILE), stream_handler]
     )
+
+    # Suppress CancelledError tracebacks from uvicorn during shutdown
+    class _SuppressCancelledError(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return 'CancelledError' not in (record.exc_text or '') and \
+                   'CancelledError' not in record.getMessage()
+
+    for name in ('uvicorn.error', 'uvicorn', 'asyncio'):
+        logging.getLogger(name).addFilter(_SuppressCancelledError())
+
     return logging.getLogger(__name__)
 
 def setup_arg_parser():
@@ -154,7 +164,7 @@ if __name__ == "__main__":
         # Keep the application running until interrupted
         loop.run_forever()
         
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("\nShutdown requested. Cleaning up...")
     except Exception as e:
         if 'logger' in globals():
@@ -164,9 +174,12 @@ if __name__ == "__main__":
         raise e
     finally:
         # Clean up the event loop
-        if 'loop' in locals():
-            tasks = asyncio.all_tasks(loop)
+        if 'loop' in locals() and not loop.is_closed():
+            tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
             if tasks:
-                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                try:
+                    loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                except RuntimeError:
+                    pass  # Loop was already stopped, tasks already cancelled
             loop.close()
             logger.info("Shutdown complete")

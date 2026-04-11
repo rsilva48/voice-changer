@@ -1,5 +1,6 @@
 import msgspec
 from socketio import packet
+from socketio.packet import Packet as _DefaultPacket
 
 
 class MsgPackPacket(packet.Packet):
@@ -11,7 +12,25 @@ class MsgPackPacket(packet.Packet):
 
     def decode(self, encoded_packet):
         """Decode a transmitted package."""
-        decoded = msgspec.msgpack.decode(encoded_packet)
+        if isinstance(encoded_packet, str):
+            # Plain text socket.io packet (e.g. connect/disconnect handshake).
+            # Delegate to the default text-based decoder.
+            default = _DefaultPacket(encoded_packet=encoded_packet)
+            self.packet_type = default.packet_type
+            self.data = default.data
+            self.id = default.id
+            self.namespace = default.namespace
+            return
+        try:
+            decoded = msgspec.msgpack.decode(encoded_packet)
+        except msgspec.DecodeError:
+            # Fallback: treat as default packet if msgpack decoding fails
+            default = _DefaultPacket(encoded_packet=encoded_packet)
+            self.packet_type = default.packet_type
+            self.data = default.data
+            self.id = default.id
+            self.namespace = default.namespace
+            return
         self.packet_type = decoded['type']
         self.data = decoded.get('data')
         self.id = decoded.get('id')

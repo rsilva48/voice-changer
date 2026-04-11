@@ -129,6 +129,17 @@ install_requirements() {
         echo "Warning: $REQUIREMENTS_FILE not found. Skipping backend-specific requirements."
     fi
     
+    # Fix onnxruntime-rocm execstack issue
+    if [ "$BACKEND" = "rocm" ] && command -v patchelf &> /dev/null; then
+        ORT_SO="venv/lib/python*/site-packages/onnxruntime/capi/onnxruntime_pybind11_state.so"
+        for f in $ORT_SO; do
+            if [ -f "$f" ]; then
+                echo "Fixing execstack on $f..."
+                patchelf --clear-execstack "$f"
+            fi
+        done
+    fi
+    
     echo "Requirements installed successfully"
 }
 
@@ -142,9 +153,9 @@ show_completion() {
     echo "To start the voice changer server:"
     echo ""
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        echo "Run ./vc_start.sh"
+        echo "Run ./vc_startup.bat"
     else
-        echo "Run ./vc_start.sh"
+        echo "Run ./vc_startup.sh"
     fi
     echo ""
     echo "Backend: $BACKEND"

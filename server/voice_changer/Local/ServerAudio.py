@@ -4,7 +4,7 @@ from const import SERVER_DEVICE_SAMPLE_RATES
 from queue import Queue
 import logging
 from voice_changer.VoiceChangerSettings import VoiceChangerSettings
-from voice_changer.Local.AudioDeviceList import checkSamplingRate, list_audio_device
+from voice_changer.Local.AudioDeviceList import checkSamplingRate, list_audio_device, resolve_device_index_by_name
 import sounddevice as sd
 import librosa
 
@@ -94,9 +94,17 @@ class ServerAudio:
 
     def audio_monitor_callback(self, outdata: np.ndarray, frames, times, status):
         try:
-            mon_wav = self.monQueue.get()
-            while self.monQueue.qsize() > 0:
-                self.monQueue.get()
+            try:
+                mon_wav = self.monQueue.get(block=True, timeout=0.05)
+            except Exception:
+                outdata.fill(0)
+                return
+            # Drain stale frames so monitor stays in sync
+            while not self.monQueue.empty():
+                try:
+                    self.monQueue.get_nowait()
+                except Exception:
+                    break
             outputChannels = outdata.shape[1]
             outdata[:] = (np.repeat(mon_wav, outputChannels).reshape(-1, outputChannels) * self.settings.serverMonitorAudioGain)
         except Exception as e:
@@ -106,12 +114,12 @@ class ServerAudio:
     ###########################################
     # Main Loop Section
     ###########################################
-    def run_no_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, inputExtraSetting, outputExtraSetting):
+    def run_no_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, inputExtraSetting, outputExtraSetting, inputDeviceId: int, outputDeviceId: int):
         self.stream = sd.Stream(
             callback=self.audio_stream_callback,
             latency='low',
             dtype="float32",
-            device=(self.settings.serverInputDeviceId, self.settings.serverOutputDeviceId),
+            device=(inputDeviceId, outputDeviceId),
             blocksize=block_frame,
             samplerate=self.settings.serverInputAudioSampleRate,
             channels=(inputMaxChannel, outputMaxChannel),
@@ -119,12 +127,12 @@ class ServerAudio:
         )
         self.stream.start()
 
-    def run_with_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, monitorMaxChannel: int, inputExtraSetting, outputExtraSetting, monitorExtraSetting):
+    def run_with_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, monitorMaxChannel: int, inputExtraSetting, outputExtraSetting, monitorExtraSetting, inputDeviceId: int, outputDeviceId: int, monitorDeviceId: int):
         self.stream = sd.Stream(
             callback=self.audio_stream_callback_mon_queue,
             latency='low',
             dtype="float32",
-            device=(self.settings.serverInputDeviceId, self.settings.serverOutputDeviceId),
+            device=(inputDeviceId, outputDeviceId),
             blocksize=block_frame,
             samplerate=self.settings.serverInputAudioSampleRate,
             channels=(inputMaxChannel, outputMaxChannel),
@@ -133,7 +141,7 @@ class ServerAudio:
         self.monitor = sd.OutputStream(
             callback=self.audio_monitor_callback,
             dtype="float32",
-            device=self.settings.serverMonitorDeviceId,
+            device=monitorDeviceId,
             blocksize=block_frame,
             samplerate=self.settings.serverMonitorAudioSampleRate,
             channels=monitorMaxChannel,
@@ -144,6 +152,12 @@ class ServerAudio:
 
     def stop(self):
         self.running = False
+        # Drain monQueue so audio_monitor_callback unblocks immediately
+        try:
+            while True:
+                self.monQueue.get_nowait()
+        except Exception:
+            pass
         if self.stream is not None:
             self.stream.close()
             self.stream = None
@@ -154,16 +168,38 @@ class ServerAudio:
     ###########################################
     # Start Section
     ###########################################
+
+    # ALSA device names that bypass PipeWire and access hardware directly.
+    # Opening these while PipeWire has exclusive control causes SIGABRT.
+    _UNSAFE_ALSA_DEVICES = {'default', 'null'}
+
+    def _is_safe_device(self, device: 'ServerAudioDevice') -> bool:
+        """Return False for devices that go to hw directly and crash under PipeWire."""
+        name = device.name.lower()
+        if name in self._UNSAFE_ALSA_DEVICES:
+            return False
+        if name.startswith('hw:') or name.startswith('plughw:'):
+            return False
+        return True
+
     def start(self):
         self.stop()
 
-        sd._terminate()
-        sd._initialize()
+        # NOTE: sd._terminate()/_initialize() was removed intentionally.
+        # It caused ALSA to renumber device indices (e.g. 'pulse'↔'default' swap)
+        # making the saved index point to the wrong device on every restart.
+        # Device indices on Linux are stable while hardware doesn't change.
+        inputDevices, outputDevices = list_audio_device()
+        inputById = {d.index: d for d in inputDevices}
+        outputById = {d.index: d for d in outputDevices}
 
-        # Device 特定
-        serverInputAudioDevice = self.getServerInputAudioDevice(self.settings.serverInputDeviceId)
-        serverOutputAudioDevice = self.getServerOutputAudioDevice(self.settings.serverOutputDeviceId)
-        serverMonitorAudioDevice = self.getServerOutputAudioDevice(self.settings.serverMonitorDeviceId)
+        inputDeviceId = self.settings.serverInputDeviceId
+        outputDeviceId = self.settings.serverOutputDeviceId
+        monitorDeviceId = self.settings.serverMonitorDeviceId
+
+        serverInputAudioDevice = inputById.get(inputDeviceId)
+        serverOutputAudioDevice = outputById.get(outputDeviceId)
+        serverMonitorAudioDevice = outputById.get(monitorDeviceId) if monitorDeviceId >= 0 else None
 
         # Generate ExtraSetting
         wasapiExclusiveMode = bool(self.settings.exclusiveMode)
@@ -193,11 +229,19 @@ class ServerAudio:
         logger.info(f"  [Output]: {serverOutputAudioDevice}, {outputExtraSetting}")
         logger.info(f"  [Monitor]: {serverMonitorAudioDevice}, {monitorExtraSetting}")
 
-        # Deviceがなかったらいったんスリープ
+        # Early null check — avoids AttributeError below if device lookup failed
         if serverInputAudioDevice is None or serverOutputAudioDevice is None:
             logger.error("Input or output device is not selected.")
             self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', ERR_GENERIC_SERVER_AUDIO_ERROR))
             return
+
+        # Refuse to open devices that bypass PipeWire and go to hw directly (causes SIGABRT)
+        for dev, label in [(serverInputAudioDevice, 'Input'), (serverOutputAudioDevice, 'Output')]:
+            if not self._is_safe_device(dev):
+                msg = f"{label} device '{dev.name}' accesses hardware directly and will crash under PipeWire. Use 'pipewire' or 'pulse' instead."
+                logger.error(msg)
+                self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', msg))
+                return
 
         # サンプリングレート
         # 同一サンプリングレートに統一（変換時にサンプルが不足する場合があるため。パディング方法が明らかになれば、それぞれ設定できるかも）
@@ -207,9 +251,9 @@ class ServerAudio:
 
         # Sample Rate Check
         if "WASAPI" not in serverInputAudioDevice.hostAPI and not wasapiExclusiveMode:
-            inputAudioSampleRateAvailable = checkSamplingRate(self.settings.serverInputDeviceId, self.settings.serverInputAudioSampleRate, "input")
-            outputAudioSampleRateAvailable = checkSamplingRate(self.settings.serverOutputDeviceId, self.settings.serverOutputAudioSampleRate, "output")
-            monitorAudioSampleRateAvailable = checkSamplingRate(self.settings.serverMonitorDeviceId, self.settings.serverMonitorAudioSampleRate, "output") if serverMonitorAudioDevice else True
+            inputAudioSampleRateAvailable = checkSamplingRate(inputDeviceId, self.settings.serverInputAudioSampleRate, "input")
+            outputAudioSampleRateAvailable = checkSamplingRate(outputDeviceId, self.settings.serverOutputAudioSampleRate, "output")
+            monitorAudioSampleRateAvailable = checkSamplingRate(monitorDeviceId, self.settings.serverMonitorAudioSampleRate, "output") if serverMonitorAudioDevice else True
 
             logger.info("Sample Rate:")
             logger.info(f"  [Input]: {self.settings.serverInputAudioSampleRate} -> {inputAudioSampleRateAvailable}")
@@ -217,22 +261,18 @@ class ServerAudio:
             if serverMonitorAudioDevice is not None:
                 logger.info(f"  [Monitor]: {self.settings.serverMonitorAudioSampleRate} -> {monitorAudioSampleRateAvailable}")
 
-            # FIXME: Ideally, there are two options:
-            # 1. UI must be provided with all sample rates and select only valid combinations of sample rates.
-            # 2. Server must pick the default device sample rate automatically so UI doesn't have to bother.
-            # This must be removed once it's done.
             if not inputAudioSampleRateAvailable or not outputAudioSampleRateAvailable or not monitorAudioSampleRateAvailable:
                 logger.info("Checking Available Sample Rate:")
                 availableInputSampleRate = []
                 availableOutputSampleRate = []
                 availableMonitorSampleRate = []
                 for sr in SERVER_DEVICE_SAMPLE_RATES:
-                    if checkSamplingRate(self.settings.serverInputDeviceId, sr, "input"):
+                    if checkSamplingRate(inputDeviceId, sr, "input"):
                         availableInputSampleRate.append(sr)
-                    if checkSamplingRate(self.settings.serverOutputDeviceId, sr, "output"):
+                    if checkSamplingRate(outputDeviceId, sr, "output"):
                         availableOutputSampleRate.append(sr)
                     if serverMonitorAudioDevice is not None:
-                        if checkSamplingRate(self.settings.serverMonitorDeviceId, sr, "output"):
+                        if checkSamplingRate(monitorDeviceId, sr, "output"):
                             availableMonitorSampleRate.append(sr)
                 err = ERR_SAMPLE_RATE_NOT_SUPPORTED % (availableInputSampleRate, availableOutputSampleRate, availableMonitorSampleRate)
                 self.callbacks.emit_to(
@@ -248,9 +288,9 @@ class ServerAudio:
 
         try:
             if serverMonitorAudioDevice is None:
-                self.run_no_monitor(block_frame, inputChannels, outputChannels, inputExtraSetting, outputExtraSetting)
+                self.run_no_monitor(block_frame, inputChannels, outputChannels, inputExtraSetting, outputExtraSetting, inputDeviceId, outputDeviceId)
             else:
-                self.run_with_monitor(block_frame, inputChannels, outputChannels, serverMonitorAudioDevice.maxOutputChannels, inputExtraSetting, outputExtraSetting, monitorExtraSetting)
+                self.run_with_monitor(block_frame, inputChannels, outputChannels, serverMonitorAudioDevice.maxOutputChannels, inputExtraSetting, outputExtraSetting, monitorExtraSetting, inputDeviceId, outputDeviceId, monitorDeviceId)
             self.running = True
         except Exception as e:
             self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', ERR_GENERIC_SERVER_AUDIO_ERROR))

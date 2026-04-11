@@ -43,6 +43,7 @@ function AudioEffectsCard({ dndAttributes, dndListeners }: AudioEffectsCardProps
     if (!serverSetting?.serverSetting?.audioEffects) return;
     
     const serverEffects = serverSetting.serverSetting.audioEffects;
+    if (!Array.isArray(serverEffects)) return;
     const effectsArray = serverEffects.map((effect, index) => ({
       ...effect,
       index

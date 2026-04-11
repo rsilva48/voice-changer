@@ -40,12 +40,12 @@ class IORecorder:
 
     def write_input(self, wav):
         if self.fi is None:
-            raise Exception('IO recorder is closed.')
+            return
         self.fi.writeframes(wav)
 
     def write_output(self, wav):
         if self.fo is None:
-            raise Exception('IO recorder is closed.')
+            return
         self.fo.writeframes(wav)
 
     def close(self):

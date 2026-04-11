@@ -24,6 +24,11 @@
     - [For Intel users](#for-intel-users)
     - [Removing Apple quarantine attribute](#removing-apple-quarantine-attribute)
     - [Running the voice changer](#running-the-voice-changer-1)
+  - [Running locally on Linux](#running-locally-on-linux)
+    - [Prerequisites](#prerequisites-1)
+    - [Installation](#installation)
+    - [Running the voice changer](#running-the-voice-changer-2)
+    - [Routing to Discord / OBS](#routing-to-discord--obs)
   - [Running on Colab/Kaggle](#running-on-colabkaggle)
 - [Troubleshooting](#troubleshooting)
   - [Exceptions.PretrainDownloadException: 'Failed to download weight.'](#exceptionspretraindownloadexception-failed-to-download-weight)
@@ -220,6 +225,86 @@ Once the download is finished, the voice changer will open the user interface us
 
 1. Double-click `MMVCServerSIO` to run the voice changer.
 
+### Running locally on Linux
+
+> [!NOTE]
+> Tested on Arch Linux (CachyOS) with PipeWire. For a complete reference including ROCm setup, audio troubleshooting and advanced routing, see [docs/linux-setup.md](docs/linux-setup.md).
+
+#### Prerequisites
+
+1. Install Python 3.10, PortAudio and snd-aloop:
+
+   **Arch / Manjaro:**
+   ```
+   sudo pacman -S python python-pip portaudio alsa-utils pipewire pipewire-pulse wireplumber
+   ```
+
+   **Ubuntu / Debian:**
+   ```
+   sudo apt install python3 python3-pip python3-venv portaudio19-dev alsa-utils
+   ```
+
+1. Load the kernel loopback module (acts as virtual audio cable):
+
+   ```
+   sudo modprobe snd-aloop
+   ```
+
+   To make it permanent across reboots:
+
+   ```
+   echo "snd-aloop" | sudo tee /etc/modules-load.d/snd-aloop.conf
+   ```
+
+#### Installation
+
+1. Open a terminal and navigate to the `server` folder.
+
+1. Run the installation script:
+
+   ```
+   chmod u+x ./vc_install.sh
+   ./vc_install.sh
+   ```
+
+   Select the backend that matches your GPU: `CPU`, `CUDA` (Nvidia), or `ROCm` (AMD).
+
+   > [!NOTE]
+   > For ROCm on unsupported GPUs (e.g. RDNA4/gfx1201), add `HSA_OVERRIDE_GFX_VERSION=12.0.0` to your environment before starting. See [docs/linux-setup.md](docs/linux-setup.md) for details.
+
+#### Running the voice changer
+
+1. Start the server:
+
+   ```
+   chmod u+x ./vc_startup.sh
+   ./vc_startup.sh
+   ```
+
+1. Open `http://localhost:18888` in your browser.
+
+   > [!NOTE]
+   > The browser does not open automatically on Linux. Copy the address from the terminal.
+
+1. In the voice changer UI, set the audio devices:
+
+   | Setting | Recommended value |
+   |---------|------------------|
+   | Input device | `pipewire` |
+   | Output device | `pulse` |
+   | Monitor device | *(leave disabled)* |
+   | Sample rate | `48000` |
+
+   > [!IMPORTANT]
+   > Do **not** select `hw:X,Y`, `plughw:X,Y` or `default` as devices under PipeWire. These bypass PipeWire's ownership of the hardware and cause an immediate crash (SIGABRT). Always use `pipewire` or `pulse`.
+
+#### Routing to Discord / OBS
+
+The startup script automatically creates a source called **RVC-Microphone** from the loopback device. In Discord or OBS, select **RVC-Microphone** as the input device.
+
+> [!NOTE]
+> Discord and OBS do not show PipeWire monitor sources in their device lists. The script works around this by wrapping the loopback monitor in a named source using `pactl load-module module-remap-source`. The source is removed automatically when the server is stopped.
+
 ### Running on Colab/Kaggle
 
 Refer to corresponding [Colab](https://github.com/tg-develop/voice-changer/blob/master-custom/Colab_RealtimeVoiceChanger.ipynb) or [Kaggle](https://github.com/tg-develop/voice-changer/blob/master-custom/Kaggle_RealtimeVoiceChanger.ipynb) notebooks in this repository and follow their instructions.
@@ -279,6 +364,22 @@ In the voice changer, make sure **passthru** is not on (indicated by yellow "Pas
 1. If you changed chunk when voice conversion was on, click **Stop** then **Start** again.
 
 1. Make sure the **perf** time is smaller than **Chunk**. Increase **Chunk** or reduce **Extra** and **Crossfade size**.
+
+### Linux: server crashes immediately on start (SIGABRT)
+
+You selected a `hw:X,Y`, `plughw:X,Y` or `default` device. These access hardware directly and conflict with PipeWire's exclusive ownership. Select `pipewire` or `pulse` as input/output devices instead.
+
+### Linux: RVC-Microphone not appearing in Discord
+
+1. Check that `snd-aloop` is loaded: `lsmod | grep snd_aloop`. If missing, run `sudo modprobe snd-aloop`.
+
+1. Restart the server. The startup script loads the `RVC-Microphone` source each time it starts.
+
+1. In Discord go to **Settings → Voice & Video → Input Device** and select **RVC-Microphone**.
+
+### Linux: ALSA underrun errors in the log
+
+The server sample rate does not match the hardware rate. Set all four sample rate fields (`serverInputAudioSampleRate`, `serverOutputAudioSampleRate`, `serverMonitorAudioSampleRate`, `serverAudioSampleRate`) to `48000` (or to `44100` if your device does not support 48 kHz).
 
 ## Contribution
 

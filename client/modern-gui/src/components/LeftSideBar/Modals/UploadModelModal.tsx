@@ -30,7 +30,7 @@ function UploadModelModal({ appState, guiState, showUpload, setShowUpload }: Upl
     slot: 0, 
     files: [], 
     params: {}, 
-    embedder: appState.serverSetting.serverSetting.embedders[0]?.name || '' 
+    embedder: Object.values(appState.serverSetting.serverSetting.embedders || {})[0]?.name || ''
   });
   const [autoSelectModel, setAutoSelectModel] = useState<boolean>(false);
 
@@ -138,7 +138,7 @@ function UploadModelModal({ appState, guiState, showUpload, setShowUpload }: Upl
         slot: 0, 
         files: [], 
         params: {}, 
-        embedder: appState.serverSetting.serverSetting.embedders[0]?.name || '' 
+        embedder: Object.values(appState.serverSetting.serverSetting.embedders || {})[0]?.name || '' 
       });
       setAutoSelectModel(false);
       setThumbnailPreview(null);  // Reset thumbnail preview

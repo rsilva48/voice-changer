@@ -55,7 +55,8 @@ function AudioMode({ audioState, setAudioState }: { audioState: "client" | "serv
 
     // Update warning message
     const messages = [];
-    if (!isClientAudioAvailable) {
+    const isServerModeActive = appState.serverSetting?.serverSetting?.enableServerAudio === 1;
+    if (!isClientAudioAvailable && !isServerModeActive) {
       messages.push("Client audio not available");
     }
     if (!isServerAudioAvailable) {

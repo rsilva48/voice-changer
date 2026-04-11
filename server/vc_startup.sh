@@ -7,6 +7,9 @@ echo "Voice Changer Server Startup Script"
 echo "==============================================="
 echo ""
 
+# Module index of the RVC virtual microphone (set at runtime)
+RVC_MOD_ID=""
+
 # Function to check if virtual environment exists
 check_venv() {
     if [ ! -d "venv" ]; then
@@ -59,14 +62,35 @@ start_app() {
     echo "Press Ctrl+C to stop the server"
     echo ""
     
+    # Route RVC output to the kernel loopback (snd-aloop).
+    # Requires: sudo modprobe snd-aloop  (permanent: /etc/modules-load.d/snd-aloop.conf)
+    export PULSE_SINK=alsa_output.platform-snd_aloop.0.analog-stereo
+
+    # Discord and OBS do not list PipeWire monitor sources in their device menus.
+    # Wrap the loopback monitor in a proper named source so it appears as a real mic.
+    # Unload any stale instance from a previous server run first.
+    stale_id=$(pactl list short modules 2>/dev/null | awk '/RVC-Mic/{print $1; exit}') || true
+    [ -n "${stale_id:-}" ] && pactl unload-module "$stale_id" 2>/dev/null || true
+    RVC_MOD_ID=$(pactl load-module module-remap-source \
+        source_name=RVC-Mic \
+        master=alsa_output.platform-snd_aloop.0.analog-stereo.monitor \
+        source_properties=device.description=RVC-Microphone 2>/dev/null) || true
+
+    # Suppress MIOpen/ROCm workspace tuning warnings (normal on first inference)
+    export MIOPEN_LOG_LEVEL=2
+    export AMD_LOG_LEVEL=0
+    
     # Start the application
     python main.py
+
 }
 
 # Function to handle cleanup on exit
 cleanup() {
     echo ""
     echo "Shutting down Voice Changer Server..."
+    # Remove the virtual microphone source created at startup
+    [ -n "${RVC_MOD_ID:-}" ] && pactl unload-module "$RVC_MOD_ID" 2>/dev/null || true
     echo "Goodbye!"
 }
 
