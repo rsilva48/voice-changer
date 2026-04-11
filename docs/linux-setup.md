@@ -123,25 +123,44 @@ for i, d in enumerate(sd.query_devices()):
 
 ### 4.2 Safe devices under PipeWire
 
-| Device name | Safe? | Notes |
-|-------------|-------|-------|
-| `pipewire`  | ✅    | Full-duplex (in+out), routes via PipeWire graph |
-| `pulse`     | ✅ (output/monitor only) | Routes via PulseAudio compat layer; supports `PULSE_SINK` env var |
-| `default`   | ⚠️    | Unstable under PipeWire, may map to `hw:` directly |
-| `hw:X,Y`    | ❌    | Direct ALSA hardware access — PipeWire holds exclusive ownership, causes **SIGABRT** |
-| `plughw:X,Y`| ❌    | Same as `hw:` |
+| Device name | Role | Notes |
+|-------------|------|-------|
+| `pipewire`  | **Input** | Captures from PipeWire default source. Same ALSA plugin clock regardless of output device. |
+| `pulse`     | **Output / Monitor** | Routes via PulseAudio compat layer. Respects `PULSE_SINK` env var to send audio to any named sink (e.g. snd-aloop loopback). |
+| `default`   | ⚠️ avoid | Unstable under PipeWire, may map to a `hw:` device directly. |
+| `hw:X,Y`    | ❌ never | Direct ALSA hardware access — PipeWire holds exclusive ownership, causes **SIGABRT**. |
+| `plughw:X,Y`| ❌ never | Same as `hw:`. |
 
-> **Rule**: under PipeWire always use `pipewire` or `pulse` as device names, never
-> `hw:` or `plughw:`. The server (`ServerAudio._is_safe_device()`) now enforces this
-> and logs a clear error if an unsafe device is selected.
+> The server (`ServerAudio._is_safe_device()`) refuses to open `hw:` and `plughw:` devices and logs a clear error message instead of crashing.
 
 ### 4.3 Recommended configuration
 
-```
-Input  → pipewire   (captures from whatever PipeWire considers default input)
-Output → pulse      (playback to whatever sink PULSE_SINK points to)
-Monitor → -1        (disabled, or any safe output device)
-```
+| Device | Setting | Why |
+|--------|---------|-----|
+| Input | `pipewire` | Stable capture clock, routes to PipeWire default source (your mic) |
+| Output | `pulse` | Separate stream from input — avoids PortAudio duplex clock-sync crash — routed to snd-aloop via `PULSE_SINK` |
+| Monitor | *(disabled, -1)* | Not needed; Discord reads from RVC-Microphone source directly |
+
+**Why input and output must be different devices**: when `pipewire` is used for both
+in a single `sd.Stream` (duplex), PortAudio tries to synchronise the clocks of the
+input and output paths. Under PipeWire this synchronisation fails intermittently,
+causing ALSA underruns and eventual crash (`pa_linux_alsa.c` assertion). Using
+`pipewire` for input and `pulse` for output opens two independent streams
+(`sd.InputStream` + `sd.OutputStream`) — each with its own clock — so they never
+conflict.
+
+**Device name persistence**: device indices in ALSA change every time a new virtual
+source is created (e.g. RVC-Mic on startup). The server resolves devices by **name**
+at startup using `serverInputDeviceName` / `serverOutputDeviceName` from
+`stored_setting.json`, so the numeric ID in that file is only a fallback and does not
+need to be kept up to date. IDs are resolved both in `VoiceChangerManager.__init__`
+(so the UI shows the right devices immediately) and again in `ServerAudio.start()`
+(so the stream opens with the current indices).
+
+**Channel count**: ALSA virtual devices like `pipewire` report up to 128 input
+channels. Opening a stream with that many channels causes PipeWire to use non-standard
+routing, resulting in glitchy, overlapping audio. The server caps all ALSA streams to
+**2 channels (stereo)** automatically.
 
 ### 4.4 Routing input to a specific microphone
 
@@ -158,7 +177,24 @@ Find the node name:
 pw-cli ls Node | grep -i "your mic name"
 ```
 
-### 4.5 Sample rate
+### 4.5 Low microphone volume
+
+USB microphones often have a conservative hardware ADC gain. If the signal is too
+quiet even at 100% input gain in the UI, boost the capture volume at the PipeWire
+level. WirePlumber persists the value automatically:
+
+```bash
+# Find your source ID:
+wpctl status | grep -A10 "Sources:"
+
+# Set volume (1.5 = 150%):
+wpctl set-volume <SOURCE_ID> 1.5
+```
+
+The value is saved to `~/.local/state/wireplumber/default-routes` and restored on
+every reconnect.
+
+### 4.6 Sample rate
 
 Set all four sample rate fields to the same value:
 
@@ -168,12 +204,6 @@ Set all four sample rate fields to the same value:
 | `serverOutputAudioSampleRate` | 48000 |
 | `serverMonitorAudioSampleRate` | 48000 |
 | `serverAudioSampleRate` | 48000 |
-
-The FiiO Q3 and most USB audio interfaces default to 48000 Hz. If your device only
-supports 44100, change all four to 44100.
-
-> **Why ALSA underruns happen**: mismatched sample rates between the server setting and
-> the actual hardware rate cause continuous xrun/underrun errors in the logs.
 
 ---
 

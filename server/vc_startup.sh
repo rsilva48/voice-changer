@@ -62,9 +62,11 @@ start_app() {
     echo "Press Ctrl+C to stop the server"
     echo ""
     
-    # Route RVC output to the kernel loopback (snd-aloop).
+    # Input: pipewire  — captura del micrófono (EPOS B20 vía sistema)
+    # Output: pulse    — enruta a snd-aloop loopback (streams SEPARADOS, sin crash de reloj)
     # Requires: sudo modprobe snd-aloop  (permanent: /etc/modules-load.d/snd-aloop.conf)
     export PULSE_SINK=alsa_output.platform-snd_aloop.0.analog-stereo
+    export PIPEWIRE_ALSA='{"alsa.rate": 48000}'
 
     # Discord and OBS do not list PipeWire monitor sources in their device menus.
     # Wrap the loopback monitor in a proper named source so it appears as a real mic.

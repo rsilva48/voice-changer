@@ -183,6 +183,9 @@ class VoiceChangerSettings:
     _serverInputDeviceId: int = -1
     _serverOutputDeviceId: int = -1
     _serverMonitorDeviceId: int = -1  # -1 でモニター無効
+    _serverInputDeviceName: str = ''
+    _serverOutputDeviceName: str = ''
+    _serverMonitorDeviceName: str = ''
     _serverInputAudioGain: float = 1.0
     _serverOutputAudioGain: float = 1.0
     _serverMonitorAudioGain: float = 1.0
@@ -248,6 +251,14 @@ class VoiceChangerSettings:
         self._serverInputDeviceId = int(id)
 
     @property
+    def serverInputDeviceName(self):
+        return self._serverInputDeviceName
+
+    @serverInputDeviceName.setter
+    def serverInputDeviceName(self, name: str):
+        self._serverInputDeviceName = str(name)
+
+    @property
     def serverOutputDeviceId(self):
         return self._serverOutputDeviceId
 
@@ -256,12 +267,28 @@ class VoiceChangerSettings:
         self._serverOutputDeviceId = int(id)
 
     @property
+    def serverOutputDeviceName(self):
+        return self._serverOutputDeviceName
+
+    @serverOutputDeviceName.setter
+    def serverOutputDeviceName(self, name: str):
+        self._serverOutputDeviceName = str(name)
+
+    @property
     def serverMonitorDeviceId(self):
         return self._serverMonitorDeviceId
 
     @serverMonitorDeviceId.setter
     def serverMonitorDeviceId(self, id: str):
         self._serverMonitorDeviceId = int(id)
+
+    @property
+    def serverMonitorDeviceName(self):
+        return self._serverMonitorDeviceName
+
+    @serverMonitorDeviceName.setter
+    def serverMonitorDeviceName(self, name: str):
+        self._serverMonitorDeviceName = str(name)
 
     @property
     def serverInputAudioGain(self):

@@ -64,6 +64,23 @@ class VoiceChangerManager(ServerAudioCallbacks):
             self.settings.set_properties(settings)
         except:
             pass
+
+        # Resolve device IDs by name immediately after loading settings,
+        # so the UI shows the correct devices before the user clicks Start.
+        # Device indices shift on every boot when the RVC-Mic module is loaded.
+        from voice_changer.Local.AudioDeviceList import resolve_device_index_by_name
+        if self.settings.serverInputDeviceName:
+            resolved = resolve_device_index_by_name(self.settings.serverInputDeviceName, "input")
+            if resolved is not None:
+                self.settings.serverInputDeviceId = resolved
+        if self.settings.serverOutputDeviceName:
+            resolved = resolve_device_index_by_name(self.settings.serverOutputDeviceName, "output")
+            if resolved is not None:
+                self.settings.serverOutputDeviceId = resolved
+        if self.settings.serverMonitorDeviceName:
+            resolved = resolve_device_index_by_name(self.settings.serverMonitorDeviceName, "output")
+            if resolved is not None:
+                self.settings.serverMonitorDeviceId = resolved
             
         # Set the VoiceChangerSettings instance in ModelManager
         from downloader.ModelManager import set_voice_changer_settings

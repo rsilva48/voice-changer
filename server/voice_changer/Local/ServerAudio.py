@@ -39,6 +39,9 @@ class ServerAudio:
 
         self.stream = None
         self.monitor = None
+        self.input_stream = None
+        self.output_stream = None
+        self.outQueue = Queue()
 
         self.running = False
 
@@ -92,6 +95,43 @@ class ServerAudio:
             self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', ERR_GENERIC_SERVER_AUDIO_ERROR))
             logger.exception(e)
 
+    # --- Split-stream callbacks (input device != output device) ---
+
+    def audio_input_callback_split(self, indata: np.ndarray, frames, times, status):
+        """Capture-only callback. Processes audio and queues output for the separate output stream."""
+        try:
+            out_wav = self._processDataWithTime(indata)
+            try:
+                self.outQueue.put_nowait(out_wav)
+            except Exception:
+                pass  # drop frame if queue is full
+            try:
+                self.monQueue.put_nowait(out_wav)
+            except Exception:
+                pass
+        except Exception as e:
+            self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', ERR_GENERIC_SERVER_AUDIO_ERROR))
+            logger.exception(e)
+
+    def audio_output_callback_split(self, outdata: np.ndarray, frames, times, status):
+        """Playback-only callback. Reads processed audio from outQueue."""
+        try:
+            try:
+                out_wav = self.outQueue.get(block=True, timeout=0.05)
+            except Exception:
+                outdata.fill(0)
+                return
+            while not self.outQueue.empty():
+                try:
+                    self.outQueue.get_nowait()
+                except Exception:
+                    break
+            outputChannels = outdata.shape[1]
+            outdata[:] = (np.repeat(out_wav, outputChannels).reshape(-1, outputChannels) * self.settings.serverOutputAudioGain)
+        except Exception as e:
+            self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', ERR_GENERIC_SERVER_AUDIO_ERROR))
+            logger.exception(e)
+
     def audio_monitor_callback(self, outdata: np.ndarray, frames, times, status):
         try:
             try:
@@ -115,29 +155,80 @@ class ServerAudio:
     # Main Loop Section
     ###########################################
     def run_no_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, inputExtraSetting, outputExtraSetting, inputDeviceId: int, outputDeviceId: int):
-        self.stream = sd.Stream(
-            callback=self.audio_stream_callback,
-            latency='low',
-            dtype="float32",
-            device=(inputDeviceId, outputDeviceId),
-            blocksize=block_frame,
-            samplerate=self.settings.serverInputAudioSampleRate,
-            channels=(inputMaxChannel, outputMaxChannel),
-            extra_settings=(inputExtraSetting, outputExtraSetting)
-        )
-        self.stream.start()
+        if inputDeviceId == outputDeviceId:
+            # Same device: use duplex stream (shared clock, no underruns)
+            self.stream = sd.Stream(
+                callback=self.audio_stream_callback,
+                latency='low',
+                dtype="float32",
+                device=(inputDeviceId, outputDeviceId),
+                blocksize=block_frame,
+                samplerate=self.settings.serverInputAudioSampleRate,
+                channels=(inputMaxChannel, outputMaxChannel),
+                extra_settings=(inputExtraSetting, outputExtraSetting)
+            )
+            self.stream.start()
+        else:
+            # Different devices: use separate input/output streams to avoid clock-sync crash
+            self.input_stream = sd.InputStream(
+                callback=self.audio_input_callback_split,
+                latency='low',
+                dtype="float32",
+                device=inputDeviceId,
+                blocksize=block_frame,
+                samplerate=self.settings.serverInputAudioSampleRate,
+                channels=inputMaxChannel,
+                extra_settings=inputExtraSetting
+            )
+            self.output_stream = sd.OutputStream(
+                callback=self.audio_output_callback_split,
+                latency='low',
+                dtype="float32",
+                device=outputDeviceId,
+                blocksize=block_frame,
+                samplerate=self.settings.serverOutputAudioSampleRate,
+                channels=outputMaxChannel,
+                extra_settings=outputExtraSetting
+            )
+            self.input_stream.start()
+            self.output_stream.start()
 
     def run_with_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, monitorMaxChannel: int, inputExtraSetting, outputExtraSetting, monitorExtraSetting, inputDeviceId: int, outputDeviceId: int, monitorDeviceId: int):
-        self.stream = sd.Stream(
-            callback=self.audio_stream_callback_mon_queue,
-            latency='low',
-            dtype="float32",
-            device=(inputDeviceId, outputDeviceId),
-            blocksize=block_frame,
-            samplerate=self.settings.serverInputAudioSampleRate,
-            channels=(inputMaxChannel, outputMaxChannel),
-            extra_settings=(inputExtraSetting, outputExtraSetting)
-        )
+        if inputDeviceId == outputDeviceId:
+            self.stream = sd.Stream(
+                callback=self.audio_stream_callback_mon_queue,
+                latency='low',
+                dtype="float32",
+                device=(inputDeviceId, outputDeviceId),
+                blocksize=block_frame,
+                samplerate=self.settings.serverInputAudioSampleRate,
+                channels=(inputMaxChannel, outputMaxChannel),
+                extra_settings=(inputExtraSetting, outputExtraSetting)
+            )
+            self.stream.start()
+        else:
+            self.input_stream = sd.InputStream(
+                callback=self.audio_input_callback_split,
+                latency='low',
+                dtype="float32",
+                device=inputDeviceId,
+                blocksize=block_frame,
+                samplerate=self.settings.serverInputAudioSampleRate,
+                channels=inputMaxChannel,
+                extra_settings=inputExtraSetting
+            )
+            self.output_stream = sd.OutputStream(
+                callback=self.audio_output_callback_split,
+                latency='low',
+                dtype="float32",
+                device=outputDeviceId,
+                blocksize=block_frame,
+                samplerate=self.settings.serverOutputAudioSampleRate,
+                channels=outputMaxChannel,
+                extra_settings=outputExtraSetting
+            )
+            self.input_stream.start()
+            self.output_stream.start()
         self.monitor = sd.OutputStream(
             callback=self.audio_monitor_callback,
             dtype="float32",
@@ -147,20 +238,26 @@ class ServerAudio:
             channels=monitorMaxChannel,
             extra_settings=monitorExtraSetting
         )
-        self.stream.start()
         self.monitor.start()
 
     def stop(self):
         self.running = False
-        # Drain monQueue so audio_monitor_callback unblocks immediately
-        try:
-            while True:
-                self.monQueue.get_nowait()
-        except Exception:
-            pass
+        # Drain queues so callbacks unblock immediately
+        for q in (self.monQueue, self.outQueue):
+            try:
+                while True:
+                    q.get_nowait()
+            except Exception:
+                pass
         if self.stream is not None:
             self.stream.close()
             self.stream = None
+        if self.input_stream is not None:
+            self.input_stream.close()
+            self.input_stream = None
+        if self.output_stream is not None:
+            self.output_stream.close()
+            self.output_stream = None
         if self.monitor is not None:
             self.monitor.close()
             self.monitor = None
@@ -197,6 +294,32 @@ class ServerAudio:
         outputDeviceId = self.settings.serverOutputDeviceId
         monitorDeviceId = self.settings.serverMonitorDeviceId
 
+        # Re-resolve by name so indices don't need to be updated after every restart.
+        # Device names like 'pipewire' and 'pulse' are stable; only their ALSA index
+        # shifts when new sources (e.g. RVC-Mic) are created by the startup script.
+        def _resolve_by_name(name: str, by_index: dict) -> int | None:
+            if not name:
+                return None
+            for dev in by_index.values():
+                if dev.name == name:
+                    return dev.index
+            return None
+
+        resolved = _resolve_by_name(self.settings.serverInputDeviceName, inputById)
+        if resolved is not None:
+            inputDeviceId = resolved
+            self.settings.serverInputDeviceId = resolved  # keep UI in sync
+
+        resolved = _resolve_by_name(self.settings.serverOutputDeviceName, outputById)
+        if resolved is not None:
+            outputDeviceId = resolved
+            self.settings.serverOutputDeviceId = resolved  # keep UI in sync
+
+        resolved = _resolve_by_name(self.settings.serverMonitorDeviceName, outputById)
+        if resolved is not None:
+            monitorDeviceId = resolved
+            self.settings.serverMonitorDeviceId = resolved  # keep UI in sync
+
         serverInputAudioDevice = inputById.get(inputDeviceId)
         serverOutputAudioDevice = outputById.get(outputDeviceId)
         serverMonitorAudioDevice = outputById.get(monitorDeviceId) if monitorDeviceId >= 0 else None
@@ -204,18 +327,23 @@ class ServerAudio:
         # Generate ExtraSetting
         wasapiExclusiveMode = bool(self.settings.exclusiveMode)
 
-        inputChannels = serverInputAudioDevice.maxInputChannels
+        # Cap to stereo — ALSA virtual devices (pipewire, pulse) report huge channel
+        # counts (128, 32) but opening them with that many channels causes PipeWire to
+        # use non-standard routing, resulting in glitchy / overlapping audio.
+        inputChannels = min(serverInputAudioDevice.maxInputChannels, 2)
         inputExtraSetting = None
         if serverInputAudioDevice and "WASAPI" in serverInputAudioDevice.hostAPI:
             inputExtraSetting = sd.WasapiSettings(exclusive=wasapiExclusiveMode, auto_convert=not wasapiExclusiveMode)
+            inputChannels = serverInputAudioDevice.maxInputChannels  # WASAPI: use device max
         elif serverInputAudioDevice and "ASIO" in serverInputAudioDevice.hostAPI and self.settings.asioInputChannel != -1:
             inputExtraSetting = sd.AsioSettings(channel_selectors=[self.settings.asioInputChannel])
             inputChannels = 1
 
-        outputChannels = serverOutputAudioDevice.maxOutputChannels
+        outputChannels = min(serverOutputAudioDevice.maxOutputChannels, 2)
         outputExtraSetting = None
         if serverOutputAudioDevice and "WASAPI" in serverOutputAudioDevice.hostAPI:
             outputExtraSetting = sd.WasapiSettings(exclusive=wasapiExclusiveMode, auto_convert=not wasapiExclusiveMode)
+            outputChannels = serverOutputAudioDevice.maxOutputChannels  # WASAPI: use device max
         elif serverInputAudioDevice and "ASIO" in serverInputAudioDevice.hostAPI and self.settings.asioOutputChannel != -1:
             outputExtraSetting = sd.AsioSettings(channel_selectors=[self.settings.asioOutputChannel])
             outputChannels = 1
