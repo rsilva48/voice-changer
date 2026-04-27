@@ -38,3 +38,17 @@ Please read this FAQ before asking or making a bug report.
 
 ### 6. I'm hearing my voice without changes
 > Make sure to disable **passthru** mode
+
+### 7. Which audio driver should I use on Windows? (Server Audio mode)
+> **Use MME** — it works reliably with all devices and all sample rates.
+>
+> | Driver | Status | Notes |
+> |--------|--------|-------|
+> | **MME** | ✅ Recommended | Works with all devices. Higher latency (~80–150 ms round-trip) but no crashes. |
+> | **WASAPI** | ⚠️ Unstable | Some USB devices (e.g. EPOS B20) return a WDM-KS driver error on stream start. The server attempts an automatic retry in exclusive mode, but this is not guaranteed to work on all hardware. |
+> | **WDM-KS** | ❌ Not supported | PortAudio cannot probe WDM-KS devices to check sample-rate compatibility. Stream open will fail with `Invalid device`. |
+> | **ASIO** | ✅ Supported | Lowest latency. Requires an ASIO driver (e.g. ASIO4ALL or manufacturer driver). Configure the channel selectors in the server settings. |
+>
+> **How to select MME:** In the *Server Audio* panel, open the input and output device dropdowns. Every device is listed with its driver prefix, e.g. `[MME] Microphone (EPOS B20)`, `[WASAPI] Microphone (EPOS B20)`, `[WDM-KS] Microphone (EPOS B20)`. Pick the **[MME]** entry for your microphone and speakers/virtual cable.
+>
+> **If you need lower latency:** Reduce the **chunk** value in the server settings. MME supports chunk values down to ~4 without audio glitches on most hardware.
