@@ -10,13 +10,15 @@
 - [Known issues](#known-issues)
   - [General](#general)
   - [DirectML (dml) version](#directml-dml-version)
+  - [AMD ROCm Windows version](#amd-rocm-windows-version)
   - [Nvidia version](#nvidia-version)
   - [All versions](#all-versions)
 - [How to use](#how-to-use)
   - [Running locally on Windows](#running-locally-on-windows)
     - [Before you start](#before-you-start)
     - [Check your hardware](#check-your-hardware)
-    - [For AMD/Intel/CPU users](#for-amdintelcpu-users)
+    - [For AMD/Intel/CPU users (DirectML)](#for-amdintelcpu-users-directml)
+    - [For AMD ROCm users (RX 6000/7000/9000)](#for-amd-rocm-users-rx-600070009000)
     - [For Nvidia users](#for-nvidia-users)
     - [Running the voice changer](#running-the-voice-changer)
   - [Running locally on macOS](#running-locally-on-macos)
@@ -46,7 +48,7 @@
 
 ## Overview
 
-This is a fork of [deiteris voice changer](https://github.com/deiteris/voice-changer) that performs real-time voice conversion
+This is a fork of [Tg Develop's voice changer](https://github.com/tg-develop/voice-changer) that performs real-time voice conversion
 using various voice conversion algorithms.
 
 > [!IMPORTANT]
@@ -95,6 +97,9 @@ Recommended requirement:
 
 A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon RX 6000 series or later, or Intel Arc A500 series or later.
 
+> [!NOTE]
+> **AMD ROCm Windows** (native GPU acceleration via PyTorch ROCm) is supported for AMD Radeon RX 6000, RX 7000 and RX 9000 series (RDNA2, RDNA3, RDNA4). This requires **Python 3.12** and AMD Adrenalin Edition driver **26.1.1 or later**. See [For AMD ROCm users (RX 6000/7000/9000)](#for-amd-rocm-users-rx-600070009000) for setup instructions.
+
 ## Known issues
 
 ### General
@@ -113,6 +118,16 @@ A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon R
 * Slightly degraded performance (up to 25% reduction) can be observed with multi-GPU setups.
 
 * AMD Radeon RX 7000 series may be unable to achieve low latency (below 256ms).
+
+### AMD ROCm Windows version
+
+* PyTorch `.pth` models run on the GPU via ROCm/HIP. ONNX models (e.g. `rmvpe_onnx`, `fcpe_onnx`, ONNX inferencers) run on the **CPU** because DirectML is unstable on RDNA3/RDNA4 GPUs under the current ONNX Runtime version. Performance is still significantly better than full CPU mode.
+
+* Only non-ONNX pitch extractors (`rmvpe`, `fcpe`, `crepe_tiny`, `crepe_full`) fully utilize the GPU. The `_onnx` variants fall back to CPU.
+
+* Requires **Python 3.12** installed via the official [python.org](https://www.python.org/downloads/) installer (not from the Microsoft Store).
+
+* Requires AMD Adrenalin Edition driver **26.1.1 or later**.
 
 ### Nvidia version
 
@@ -146,7 +161,7 @@ A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon R
 
    * GPU 1: AMD Radeon(TM) Graphics.
 
-#### For AMD/Intel/CPU users
+#### For AMD/Intel/CPU users (DirectML)
 
 > [!TIP]
 > For AMD users, the recommended driver version is `24.6.1` or later.
@@ -154,6 +169,41 @@ A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon R
 1. Download the `voice-changer-windows-amd64-dml.zip` ZIP file.
 
 1. Right-click the ZIP file. In the opened action menu select **7-Zip** > **Extract to "voice-changer-windows-amd64-dml\\"**.
+
+#### For AMD ROCm users (RX 6000/7000/9000)
+
+> [!NOTE]
+> This method provides native GPU acceleration for AMD RX 6000, RX 7000 and RX 9000 series (RDNA2, RDNA3, RDNA4) using PyTorch ROCm on Windows. It requires building from source.
+
+> [!IMPORTANT]
+> This installation path requires **Python 3.12** installed from [python.org](https://www.python.org/downloads/) and **AMD Adrenalin Edition driver 26.1.1 or later**.
+
+1. Make sure Python 3.12 is installed and the `py -3.12` launcher command works in a command prompt.
+
+1. Make sure AMD Adrenalin Edition driver 26.1.1 or later is installed. [Download here](https://www.amd.com/en/support/download/drivers.html).
+
+1. Clone the repository:
+
+   ```
+   git clone https://github.com/tg-develop/voice-changer.git
+   cd voice-changer\server
+   ```
+
+1. Run the installation script and choose option **5 (ROCm for Windows)**:
+
+   ```
+   .\vc_install.bat
+   ```
+
+   This will automatically create a Python 3.12 virtual environment, install ROCm SDK 7.2, PyTorch 2.9.1+rocm and all required dependencies (~3 GB download).
+
+1. After installation completes, verify GPU detection: the script will print the detected GPU name. You should see your AMD Radeon GPU listed.
+
+1. To start the server, run:
+
+   ```
+   .\vc_startup.bat
+   ```
 
 #### For Nvidia users
 
@@ -390,7 +440,10 @@ you encounter during usage.
 
 ### Prerequisites
 
-1. [If not installed] Download and install [Python 3.10](https://www.python.org/downloads/release/python-3108/).
+1. [If not installed] Download and install [Python 3.10](https://www.python.org/downloads/release/python-3108/) (for CPU, CUDA and DirectML backends).
+
+   > [!NOTE]
+   > **AMD ROCm Windows** requires **Python 3.12** instead. Download and install [Python 3.12](https://www.python.org/downloads/release/python-31210/) from the official Python website (not the Microsoft Store).
 
 1. [If not installed] Download and install git.
 
@@ -401,6 +454,13 @@ you encounter during usage.
    ```
    python --version
    Python 3.10.8
+   ```
+
+   For ROCm Windows, verify Python 3.12 is accessible via the launcher:
+
+   ```
+   py -3.12 --version
+   Python 3.12.10
    ```
 
 1. Clone the repository.
@@ -416,6 +476,13 @@ Run the installation script and choose your architecture:
      ```
      .\vc_install.bat
      ```
+
+     Available options:
+     - `1` — CPU only
+     - `2` — Nvidia CUDA
+     - `3` — DirectML (AMD/Intel GPU, Windows)
+     - `4` — ROCm (AMD GPU, Linux)
+     - `5` — ROCm for Windows (AMD RX 6000/7000/9000 — requires Python 3.12)
 
    * For Linux:
 

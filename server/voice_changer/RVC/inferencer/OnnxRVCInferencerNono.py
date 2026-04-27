@@ -22,7 +22,7 @@ class OnnxRVCInferencerNono(OnnxRVCInferencer):
         return_length: int,
         formant_length: int,
     ) -> torch.Tensor:
-        if feats.device.type == 'cuda':
+        if self._use_cuda_iobinding:
             binding = self.model.io_binding()
 
             binding.bind_input('feats', device_type='cuda', device_id=feats.device.index, element_type=self.fp_dtype_np, shape=tuple(feats.shape), buffer_ptr=feats.float().data_ptr())

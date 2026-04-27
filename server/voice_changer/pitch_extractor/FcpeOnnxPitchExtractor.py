@@ -45,6 +45,9 @@ class FcpeOnnxPitchExtractor(PitchExtractor):
             is_half=self.is_half
         ).to(device_manager.device)
         self.onnx_session = onnxruntime.InferenceSession(model.SerializeToString(), sess_options=so, providers=onnxProviders, provider_options=onnxProviderOptions)
+        # io_binding with GPU memory only works with CUDAExecutionProvider (NVIDIA).
+        # With DmlExecutionProvider (ROCm/Windows) tensors must go through CPU.
+        self._use_cuda_iobinding = device_manager.onnx_uses_cuda_iobinding()
 
     def extract(
         self,
@@ -54,7 +57,7 @@ class FcpeOnnxPitchExtractor(PitchExtractor):
     ) -> torch.Tensor:
         mel = self.mel_extractor(audio.unsqueeze(0).float())
 
-        if audio.device.type == 'cuda':
+        if self._use_cuda_iobinding:
             binding = self.onnx_session.io_binding()
 
             binding.bind_input('mel', device_type='cuda', device_id=audio.device.index, element_type=self.fp_dtype_np, shape=tuple(mel.shape), buffer_ptr=mel.contiguous().data_ptr())
