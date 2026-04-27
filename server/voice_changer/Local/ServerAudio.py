@@ -19,6 +19,10 @@ Available sample rates:
   [Output]: %s
   [Monitor]: %s"""
 ERR_GENERIC_SERVER_AUDIO_ERROR = "A server audio error occurred."
+ERR_WASAPI_INIT_FAILED = (
+    "WASAPI could not start (WDM-KS driver error returned by the audio device). "
+    "Switch the input device to MME (e.g. 'Microphone (EPOS B20)') and try again."
+)
 
 class ServerAudioCallbacks(Protocol):
     def on_audio(self, unpackedData: AudioInOutFloat) -> tuple[AudioInOutFloat, list[Union[int, float]]]:
@@ -421,7 +425,18 @@ class ServerAudio:
                 self.run_with_monitor(block_frame, inputChannels, outputChannels, serverMonitorAudioDevice.maxOutputChannels, inputExtraSetting, outputExtraSetting, monitorExtraSetting, inputDeviceId, outputDeviceId, monitorDeviceId)
             self.running = True
         except Exception as e:
-            self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', ERR_GENERIC_SERVER_AUDIO_ERROR))
+            # Close any streams that were opened but not started before the exception.
+            self.stop()
+            # Reset flag so the REST response returns serverAudioStated=0 → UI toggle turns off.
+            self.settings.serverAudioStated = 0
+            # Provide a targeted message for the well-known WASAPI/WDM-KS driver error so the
+            # user knows to switch to MME rather than seeing a cryptic PortAudio traceback.
+            err_str = str(e)
+            if 'WdmSyncIoctl' in err_str or 'WDM-KS error' in err_str:
+                user_msg = ERR_WASAPI_INIT_FAILED
+            else:
+                user_msg = ERR_GENERIC_SERVER_AUDIO_ERROR
+            self.callbacks.emit_to(0, self.performance, ('ERR_GENERIC_SERVER_AUDIO_ERROR', user_msg))
             logger.exception(e)
 
     ###########################################

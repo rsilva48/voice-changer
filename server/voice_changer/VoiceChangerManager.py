@@ -303,6 +303,13 @@ class VoiceChangerManager(ServerAudioCallbacks):
         self.server_audio.update_settings(key, val, old_value)
         self.vc.update_settings(key, val, old_value)
 
+        # If a side effect inside update_settings (e.g. a failed audio start) changed the
+        # setting back (e.g. serverAudioStated reset to 0), persist that corrected value so
+        # the on-disk state matches what the REST response will report.
+        actual_val = self.settings.get_property(key)
+        if actual_val != val:
+            self.store_setting()
+
         return self.get_info()
 
     def change_voice(self, receivedData: AudioInOutFloat) -> tuple[AudioInOutFloat, tuple, tuple | None]:
