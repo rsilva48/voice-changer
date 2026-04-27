@@ -98,7 +98,7 @@ Recommended requirement:
 A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon RX 6000 series or later, or Intel Arc A500 series or later.
 
 > [!NOTE]
-> **AMD ROCm Windows** (native GPU acceleration via PyTorch ROCm) is supported for AMD Radeon RX 6000, RX 7000 and RX 9000 series (RDNA2, RDNA3, RDNA4). This requires **Python 3.12** and AMD Adrenalin Edition driver **26.1.1 or later**. See [For AMD ROCm users (RX 6000/7000/9000)](#for-amd-rocm-users-rx-600070009000) for setup instructions.
+> **AMD ROCm Windows** (native GPU acceleration via PyTorch ROCm) is supported for AMD Radeon RX 6000, RX 7000 and RX 9000 series (RDNA2, RDNA3, RDNA4). This requires **Python 3.12** and AMD Adrenalin Edition driver **26.2.2 or later**. See [For AMD ROCm users (RX 6000/7000/9000)](#for-amd-rocm-users-rx-600070009000) for setup instructions.
 
 ## Known issues
 
@@ -127,7 +127,7 @@ A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon R
 
 * Requires **Python 3.12** installed via the official [python.org](https://www.python.org/downloads/) installer (not from the Microsoft Store).
 
-* Requires AMD Adrenalin Edition driver **26.1.1 or later**.
+* Requires AMD Adrenalin Edition driver **26.2.2 or later**.
 
 ### Nvidia version
 
@@ -176,11 +176,11 @@ A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon R
 > This method provides native GPU acceleration for AMD RX 6000, RX 7000 and RX 9000 series (RDNA2, RDNA3, RDNA4) using PyTorch ROCm on Windows. It requires building from source.
 
 > [!IMPORTANT]
-> This installation path requires **Python 3.12** installed from [python.org](https://www.python.org/downloads/) and **AMD Adrenalin Edition driver 26.1.1 or later**.
+> This installation path requires **Python 3.12** installed from [python.org](https://www.python.org/downloads/) and **AMD Adrenalin Edition driver 26.2.2 or later**.
 
 1. Make sure Python 3.12 is installed and the `py -3.12` launcher command works in a command prompt.
 
-1. Make sure AMD Adrenalin Edition driver 26.1.1 or later is installed. [Download here](https://www.amd.com/en/support/download/drivers.html).
+1. Make sure AMD Adrenalin Edition driver 26.2.2 or later is installed. [Download here](https://www.amd.com/en/support/download/drivers.html).
 
 1. Clone the repository:
 
@@ -195,7 +195,7 @@ A dedicated graphics card Nvidia GeForce RTX 20 Series or later, or AMD Radeon R
    .\vc_install.bat
    ```
 
-   This will automatically create a Python 3.12 virtual environment, install ROCm SDK 7.2, PyTorch 2.9.1+rocm and all required dependencies (~3 GB download).
+   This will automatically create a Python 3.12 virtual environment, install ROCm SDK 7.2.1, PyTorch 2.9.1+rocm7.2.1 and all required dependencies (~3 GB download).
 
 1. After installation completes, verify GPU detection: the script will print the detected GPU name. You should see your AMD Radeon GPU listed.
 

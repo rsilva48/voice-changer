@@ -15,13 +15,13 @@ Please read this FAQ before asking or making a bug report.
 > The DirectML version has limitations on newer AMD RDNA GPUs. For AMD Radeon RX 6000, RX 7000 and RX 9000 series you can use **native ROCm GPU acceleration** by running from source with the ROCm Windows installer.
 >
 > **Requirements:**
-> - AMD Adrenalin Edition driver **26.1.1 or later**
+> - AMD Adrenalin Edition driver **26.2.2 or later**
 > - **Python 3.12** (from [python.org](https://www.python.org/downloads/), NOT the Microsoft Store)
 >
 > **Setup:**
 > 1. Clone the repository and navigate to the `server` folder.
 > 2. Run `vc_install.bat` and choose option **5 (ROCm for Windows)**.
-> 3. The script will install ROCm SDK 7.2, PyTorch 2.9.1+rocm and all dependencies automatically (~3 GB).
+> 3. The script will install ROCm SDK 7.2.1, PyTorch 2.9.1+rocm7.2.1 and all dependencies automatically (~3 GB).
 > 4. After installation, run `vc_startup.bat` to start the server.
 >
 > **Notes:**

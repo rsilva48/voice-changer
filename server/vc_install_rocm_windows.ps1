@@ -5,11 +5,11 @@
 
 .DESCRIPTION
     Creates a Python 3.12 virtual environment and installs PyTorch with native
-    AMD ROCm 7.2 GPU acceleration for RDNA2/RDNA3/RDNA4 GPUs (RX 6000/7000/9000 series).
+    AMD ROCm 7.2.1 GPU acceleration for RDNA2/RDNA3/RDNA4 GPUs (RX 6000/7000/9000 series).
 
     Prerequisites:
       - Python 3.12 installed via the Windows Python installer (py launcher available)
-      - AMD Adrenalin Edition driver 26.1.1 or newer
+      - AMD Adrenalin Edition driver 26.2.2 or newer
       - Windows 10/11 64-bit
 
     Reference:
@@ -46,7 +46,7 @@ function Invoke-Step([string]$desc, [scriptblock]$block) {
     Write-Step $desc
     try { & $block } catch {
         Write-Fail $_
-        Read-Host "Press Enter to exit"
+        if ([Environment]::UserInteractive) { Read-Host "Press Enter to exit" }
         exit 1
     }
 }
@@ -58,7 +58,7 @@ Write-Host @"
 
 ===============================================================
   Voice Changer Server — AMD ROCm Windows Installer
-  ROCm 7.2 | PyTorch 2.9.1 | Python 3.12
+    ROCm 7.2.1 | PyTorch 2.9.1 | Python 3.12
 ===============================================================
 "@ -ForegroundColor Magenta
 
@@ -117,8 +117,11 @@ $VenvDir = Join-Path $ScriptDir "venv"
 
 Invoke-Step "Creating virtual environment at '$VenvDir'" {
     if (Test-Path $VenvDir) {
-        Write-Warn "Existing venv found — removing it."
-        Remove-Item -Recurse -Force $VenvDir
+        Write-Warn "Existing venv found — renaming to venv_old and creating a fresh one."
+        $oldVenv = "$VenvDir`_old"
+        if (Test-Path $oldVenv) { Remove-Item -Recurse -Force $oldVenv -ErrorAction SilentlyContinue }
+        Rename-Item $VenvDir $oldVenv -ErrorAction Stop
+        Write-Warn "Old venv kept at '$oldVenv'. You can delete it manually once installation succeeds."
     }
 
     $createCmd = "$($script:PyExe) -m venv `"$VenvDir`""
@@ -130,13 +133,12 @@ Invoke-Step "Creating virtual environment at '$VenvDir'" {
     Write-OK "Virtual environment created."
 }
 
-$PipExe  = "$VenvDir\Scripts\pip.exe"
 $PythonExe = "$VenvDir\Scripts\python.exe"
 
-# Convenience wrapper so we always target the venv pip
-function Invoke-Pip([string[]]$Args) {
-    & $PipExe @Args
-    if ($LASTEXITCODE -ne 0) { throw "pip command failed: pip $Args" }
+# Convenience wrapper so we always target the venv python -m pip
+function Invoke-Pip([string[]]$PipArgs) {
+    & $PythonExe -m pip @PipArgs
+    if ($LASTEXITCODE -ne 0) { throw "pip command failed: pip $PipArgs" }
 }
 
 # ------------------------------------------------------------------ #
@@ -150,12 +152,12 @@ Invoke-Step "Upgrading pip, setuptools, wheel" {
 # ------------------------------------------------------------------ #
 #  4. Install AMD ROCm SDK wheels
 # ------------------------------------------------------------------ #
-Invoke-Step "Installing AMD ROCm 7.2 SDK (this may take several minutes)" {
+Invoke-Step "Installing AMD ROCm 7.2.1 SDK (this may take several minutes)" {
     $rocmSdkWheels = @(
-        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl",
-        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_devel-7.2.0.dev0-py3-none-win_amd64.whl",
-        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl",
-        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm-7.2.0.dev0.tar.gz"
+        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl",
+        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl",
+        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl",
+        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm-7.2.1.tar.gz"
     )
 
     Invoke-Pip (@("install", "--no-cache-dir") + $rocmSdkWheels)
@@ -165,11 +167,11 @@ Invoke-Step "Installing AMD ROCm 7.2 SDK (this may take several minutes)" {
 # ------------------------------------------------------------------ #
 #  5. Install PyTorch + torchaudio + torchvision (ROCm cp312 wheels)
 # ------------------------------------------------------------------ #
-Invoke-Step "Installing PyTorch 2.9.1 + ROCm (cp312 wheels, may take several minutes)" {
+Invoke-Step "Installing PyTorch 2.9.1 + ROCm 7.2.1 (cp312 wheels, may take several minutes)" {
     $torchWheels = @(
-        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl",
-        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchaudio-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl",
-        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl"
+        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl",
+        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchaudio-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl",
+        "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchvision-0.24.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl"
     )
 
     Invoke-Pip (@("install", "--no-cache-dir") + $torchWheels)
@@ -208,7 +210,7 @@ Invoke-Step "Verifying PyTorch and ROCm GPU detection" {
     Write-Host "    $cudaAvail"
     if ($cudaAvail -notmatch "True") {
         Write-Warn "GPU not detected via torch.cuda.is_available()."
-        Write-Warn "Make sure AMD driver 26.1.1+ is installed and the GPU is RDNA2 or newer."
+        Write-Warn "Make sure AMD driver 26.2.2+ is installed and the GPU is RDNA2 or newer."
     }
 
     # Device name
@@ -235,8 +237,8 @@ Write-Host @"
 ===============================================================
   Installation complete!
 ===============================================================
-  Backend  : AMD ROCm 7.2 (Windows)
-  PyTorch  : 2.9.1+rocmsdk20260116
+  Backend  : AMD ROCm 7.2.1 (Windows)
+  PyTorch  : 2.9.1+rocm7.2.1
   Python   : 3.12
 
   To start the server run:
@@ -249,4 +251,4 @@ Write-Host @"
 ===============================================================
 "@ -ForegroundColor Green
 
-Read-Host "Press Enter to exit"
+if ([Environment]::UserInteractive) { Read-Host "Press Enter to exit" }
