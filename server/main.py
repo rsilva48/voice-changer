@@ -127,6 +127,19 @@ async def shutdown(signal, loop, server=None):
 def handle_exception(loop, context):
     """Handle uncaught exceptions in the event loop."""
     msg = context.get("exception", context["message"])
+    exc = context.get("exception")
+
+    # Ignore transient network/connection errors — these are normal when a
+    # browser tab closes, navigates away, or resets a TCP connection while
+    # downloading a file (e.g. recordIO wav export).
+    if isinstance(exc, (ConnectionResetError, ConnectionAbortedError)):
+        logger.warning(f"Ignored transient connection error: {msg}")
+        return
+    # WinError 10054 (WSAECONNRESET) arrives wrapped in OSError on Windows
+    if isinstance(exc, OSError) and getattr(exc, 'winerror', None) in (10054, 10053, 10049):
+        logger.warning(f"Ignored transient WinSock error: {msg}")
+        return
+
     logger.error(f"Caught exception: {msg}")
     logger.error("Shutting down...")
     asyncio.create_task(shutdown(signal.SIGTERM, loop))
