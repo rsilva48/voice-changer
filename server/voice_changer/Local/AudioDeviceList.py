@@ -38,7 +38,21 @@ def checkSamplingRate(deviceId: int, desiredSamplingRate: int, type: ServerAudio
                 pass
             return True
         except Exception as e:  # NOQA
-            logger.warning(f"[checkSamplingRate] {e}")
+            err_str = str(e)
+            logger.warning(f"[checkSamplingRate] Error opening InputStream: {err_str}")
+            # WDM-KS devices often return paInvalidDevice (-9996) when probed via a
+            # temporary stream (the host API can't be opened that way), but the device
+            # may still be valid.  Trust the device's reported default_samplerate so
+            # the actual stream-open attempt can report a real error instead of a
+            # misleading "sample rate not supported" message.
+            if 'Invalid device' in err_str or '-9996' in err_str:
+                try:
+                    dev_info = sd.query_devices(deviceId)
+                    if abs(float(dev_info['default_samplerate']) - float(desiredSamplingRate)) < 1.0:
+                        logger.debug(f"[checkSamplingRate] Device {deviceId} paInvalidDevice on probe; trusting default_samplerate={desiredSamplingRate}")
+                        return True
+                except Exception:
+                    pass
             return False
     else:
         try:
@@ -51,7 +65,16 @@ def checkSamplingRate(deviceId: int, desiredSamplingRate: int, type: ServerAudio
                 pass
             return True
         except Exception as e:  # NOQA
-            logger.warning(f"[checkSamplingRate] {e}")
+            err_str = str(e)
+            logger.warning(f"[checkSamplingRate] Error opening OutputStream: {err_str}")
+            if 'Invalid device' in err_str or '-9996' in err_str:
+                try:
+                    dev_info = sd.query_devices(deviceId)
+                    if abs(float(dev_info['default_samplerate']) - float(desiredSamplingRate)) < 1.0:
+                        logger.debug(f"[checkSamplingRate] Device {deviceId} paInvalidDevice on probe; trusting default_samplerate={desiredSamplingRate}")
+                        return True
+                except Exception:
+                    pass
             return False
 
 

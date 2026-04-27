@@ -158,6 +158,38 @@ class ServerAudio:
     ###########################################
     # Main Loop Section
     ###########################################
+
+    def _open_and_start_input_stream(self, **kwargs) -> sd.InputStream:
+        """Create and start an InputStream.
+
+        For WASAPI shared-mode streams: if PortAudio throws a WdmSyncIoctl /
+        WDM-KS error during start() (e.g. KSPROPSETID_AudioSignalProcessing
+        not found on USB devices like the EPOS B20), automatically retry in
+        WASAPI *exclusive* mode.  Exclusive mode bypasses the Windows APO
+        chain and therefore skips the offending property query.
+        """
+        extra_settings = kwargs.get('extra_settings')
+        attempts: list[tuple] = [(extra_settings, 'configured')]
+        if isinstance(extra_settings, sd.WasapiSettings) and not extra_settings.exclusive:
+            attempts.append((sd.WasapiSettings(exclusive=True, auto_convert=False), 'WASAPI exclusive'))
+
+        last_exc: sd.PortAudioError | None = None
+        for settings, label in attempts:
+            s = sd.InputStream(**{**kwargs, 'extra_settings': settings})
+            try:
+                s.start()
+                if last_exc is not None:
+                    logger.warning(f"[ServerAudio] Input stream started with {label} (shared WASAPI failed: {last_exc})")
+                return s
+            except sd.PortAudioError as e:
+                s.close()
+                if 'WdmSyncIoctl' in str(e) or 'WDM-KS error' in str(e):
+                    last_exc = e
+                    logger.warning(f"[ServerAudio] Input stream {label!r} failed (WdmSyncIoctl); trying next fallback")
+                else:
+                    raise
+        raise last_exc  # type: ignore[misc]
+
     def run_no_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, inputExtraSetting, outputExtraSetting, inputDeviceId: int, outputDeviceId: int):
         if inputDeviceId == outputDeviceId:
             # Same device: use duplex stream (shared clock, no underruns)
@@ -174,7 +206,7 @@ class ServerAudio:
             self.stream.start()
         else:
             # Different devices: use separate input/output streams to avoid clock-sync crash
-            self.input_stream = sd.InputStream(
+            self.input_stream = self._open_and_start_input_stream(
                 callback=self.audio_input_callback_split,
                 latency='low',
                 dtype="float32",
@@ -182,7 +214,7 @@ class ServerAudio:
                 blocksize=block_frame,
                 samplerate=self.settings.serverInputAudioSampleRate,
                 channels=inputMaxChannel,
-                extra_settings=inputExtraSetting
+                extra_settings=inputExtraSetting,
             )
             self.output_stream = sd.OutputStream(
                 callback=self.audio_output_callback_split,
@@ -194,7 +226,6 @@ class ServerAudio:
                 channels=outputMaxChannel,
                 extra_settings=outputExtraSetting
             )
-            self.input_stream.start()
             self.output_stream.start()
 
     def run_with_monitor(self, block_frame: int, inputMaxChannel: int, outputMaxChannel: int, monitorMaxChannel: int, inputExtraSetting, outputExtraSetting, monitorExtraSetting, inputDeviceId: int, outputDeviceId: int, monitorDeviceId: int):
@@ -211,7 +242,7 @@ class ServerAudio:
             )
             self.stream.start()
         else:
-            self.input_stream = sd.InputStream(
+            self.input_stream = self._open_and_start_input_stream(
                 callback=self.audio_input_callback_split,
                 latency='low',
                 dtype="float32",
@@ -219,7 +250,7 @@ class ServerAudio:
                 blocksize=block_frame,
                 samplerate=self.settings.serverInputAudioSampleRate,
                 channels=inputMaxChannel,
-                extra_settings=inputExtraSetting
+                extra_settings=inputExtraSetting,
             )
             self.output_stream = sd.OutputStream(
                 callback=self.audio_output_callback_split,
@@ -231,7 +262,6 @@ class ServerAudio:
                 channels=outputMaxChannel,
                 extra_settings=outputExtraSetting
             )
-            self.input_stream.start()
             self.output_stream.start()
         self.monitor = sd.OutputStream(
             callback=self.audio_monitor_callback,

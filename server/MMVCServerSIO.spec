@@ -42,28 +42,35 @@ tmp_ret = collect_all('onnxruntime') # Fix "ModuleNotFoundError: No module named
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 if backend == 'rocm':
-  # --- rocm_sdk Python packages (must be importable at runtime) ---
-  hiddenimports += collect_submodules('rocm_sdk')
-  hiddenimports += collect_submodules('rocm_sdk_core')
-  hiddenimports += ['_rocm_sdk_core', '_rocm_sdk_libraries_custom']
-  datas += collect_data_files('rocm_sdk', include_py_files=True)
-  datas += collect_data_files('rocm_sdk_core', include_py_files=True)
-  datas += collect_data_files('_rocm_sdk_core', include_py_files=True)
-  datas += collect_data_files('_rocm_sdk_libraries_custom', include_py_files=True)
+  if sys.platform == 'win32':
+    # Windows ROCm: runtime is split across separate rocm_sdk_* Python packages
+    # (rocm_sdk, rocm_sdk_core, _rocm_sdk_core, _rocm_sdk_libraries_custom).
+    # These packages do not exist on Linux, so all collection is gated here.
 
-  # --- ROCm runtime DLLs and GPU kernel data ---
-  # rocm_sdk.find_libraries() resolves DLLs via:
-  #   Path(_rocm_sdk_<pkg>.__file__).parent / "bin" / <dll_pattern>
-  # So DLLs must land at <bundle>/_rocm_sdk_<pkg>/bin/ in the dist tree.
-  for _sp in site.getsitepackages():
-    for _pkg in ['_rocm_sdk_core', '_rocm_sdk_libraries_custom']:
-      _bin_dir = os.path.join(_sp, _pkg, 'bin')
-      if not os.path.isdir(_bin_dir):
-        continue
-      for _f in glob.glob(os.path.join(_bin_dir, '**', '*'), recursive=True):
-        if os.path.isfile(_f):
-          _rel_dest = os.path.relpath(os.path.dirname(_f), _sp)
-          datas.append((_f, _rel_dest))
+    # --- rocm_sdk Python packages (must be importable at runtime) ---
+    hiddenimports += collect_submodules('rocm_sdk')
+    hiddenimports += collect_submodules('rocm_sdk_core')
+    hiddenimports += ['_rocm_sdk_core', '_rocm_sdk_libraries_custom']
+    datas += collect_data_files('rocm_sdk', include_py_files=True)
+    datas += collect_data_files('rocm_sdk_core', include_py_files=True)
+    datas += collect_data_files('_rocm_sdk_core', include_py_files=True)
+    datas += collect_data_files('_rocm_sdk_libraries_custom', include_py_files=True)
+
+    # --- ROCm runtime DLLs and GPU kernel data ---
+    # rocm_sdk.find_libraries() resolves DLLs via:
+    #   Path(_rocm_sdk_<pkg>.__file__).parent / "bin" / <dll_pattern>
+    # So DLLs must land at <bundle>/_rocm_sdk_<pkg>/bin/ in the dist tree.
+    for _sp in site.getsitepackages():
+      for _pkg in ['_rocm_sdk_core', '_rocm_sdk_libraries_custom']:
+        _bin_dir = os.path.join(_sp, _pkg, 'bin')
+        if not os.path.isdir(_bin_dir):
+          continue
+        for _f in glob.glob(os.path.join(_bin_dir, '**', '*'), recursive=True):
+          if os.path.isfile(_f):
+            _rel_dest = os.path.relpath(os.path.dirname(_f), _sp)
+            datas.append((_f, _rel_dest))
+  # Linux ROCm: torch's lib/ directory already contains all required .so files
+  # (librocblas, libhipblas, libMIOpen, etc.) collected above via collect_dynamic_libs('torch').
 
 a = Analysis(
     ['client.py'],
